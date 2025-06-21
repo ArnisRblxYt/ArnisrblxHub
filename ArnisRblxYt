@@ -1,0 +1,171 @@
+-- FINAL SCRIPT: Full ESP, Auto-Aim, Health/Distance, Respawn Support
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local autoAimEnabled = true
+local highlightFolder = Instance.new("Folder")
+highlightFolder.Name = "PlayerHighlights"
+highlightFolder.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- UI Setup
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AutoAimUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Title
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 40)
+titleLabel.Position = UDim2.new(0, 0, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.TextColor3 = Color3.new(1, 1, 1)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextScaled = true
+titleLabel.Text = "Arni's Script"
+titleLabel.Parent = screenGui
+
+-- Toggle Button
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 160, 0, 50)
+button.Position = UDim2.new(1, -170, 1, -60)
+button.AnchorPoint = Vector2.new(0, 0)
+button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+button.TextColor3 = Color3.new(1, 1, 1)
+button.Font = Enum.Font.GothamBold
+button.TextSize = 20
+button.Text = "Auto-Aim: ON"
+button.Parent = screenGui
+
+button.MouseButton1Click:Connect(function()
+	autoAimEnabled = not autoAimEnabled
+	button.Text = "Auto-Aim: " .. (autoAimEnabled and "ON" or "OFF")
+end)
+
+-- Helper: Create ESP Billboard with distance & health
+local function createBillboard(player)
+	if not player.Character or not player.Character:FindFirstChild("Head") then return end
+
+	local existing = player.Character:FindFirstChild("ESPLabel")
+	if existing then existing:Destroy() end
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "ESPLabel"
+	billboard.Adornee = player.Character.Head
+	billboard.Size = UDim2.new(0, 100, 0, 50)
+	billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Parent = player.Character
+
+	local text = Instance.new("TextLabel")
+	text.Size = UDim2.new(1, 0, 1, 0)
+	text.BackgroundTransparency = 1
+	text.TextColor3 = Color3.new(1, 1, 1)
+	text.TextStrokeTransparency = 0
+	text.TextScaled = true
+	text.Font = Enum.Font.GothamBold
+	text.Text = "LOADING..."
+	text.Name = "ESPText"
+	text.Parent = billboard
+end
+
+-- Update ESP text per frame
+local function updateBillboard(player)
+	if player.Character and player.Character:FindFirstChild("Humanoid") and player.Character:FindFirstChild("Head") then
+		local gui = player.Character:FindFirstChild("ESPLabel")
+		local label = gui and gui:FindFirstChild("ESPText")
+		if label then
+			local humanoid = player.Character:FindFirstChild("Humanoid")
+			local dist = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and (LocalPlayer.Character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude) or 0
+			label.Text = string.format("HP: %d | %.0f studs", humanoid.Health, dist)
+		end
+	end
+end
+
+-- Highlight logic per player
+local function attachESP(player)
+	if player == LocalPlayer then return end
+
+	local function addStuff()
+		repeat task.wait() until player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Head")
+
+		-- Create Highlight
+		local existing = highlightFolder:FindFirstChild(player.Name)
+		if not existing then
+			local highlight = Instance.new("Highlight")
+			highlight.Name = player.Name
+			highlight.FillColor = Color3.fromRGB(255, 0, 0)
+			highlight.OutlineColor = Color3.new(1, 1, 1)
+			highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			highlight.Adornee = player.Character
+			highlight.Parent = highlightFolder
+		else
+			existing.Adornee = player.Character
+		end
+
+		-- Create Billboard
+		createBillboard(player)
+	end
+
+	addStuff()
+
+	player.CharacterAdded:Connect(function()
+		task.wait(0.5)
+		addStuff()
+	end)
+end
+
+-- Apply to existing players
+for _, p in pairs(Players:GetPlayers()) do
+	attachESP(p)
+end
+
+-- New players
+Players.PlayerAdded:Connect(function(p)
+	p.CharacterAdded:Connect(function()
+		task.wait(0.5)
+		attachESP(p)
+	end)
+end)
+
+-- Closest enemy finder
+local function getClosestPlayer()
+	local closest = nil
+	local shortestDistance = math.huge
+
+	for _, player in pairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			local pos, onScreen = Camera:WorldToViewportPoint(player.Character.HumanoidRootPart.Position)
+			if onScreen then
+				local dist = (Vector2.new(pos.X, pos.Y) - Camera.ViewportSize / 2).Magnitude
+				if dist < shortestDistance then
+					shortestDistance = dist
+					closest = player
+				end
+			end
+		end
+	end
+
+	return closest
+end
+
+-- Loop to update ESP + Auto-Aim
+RunService.RenderStepped:Connect(function()
+	for _, player in pairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			updateBillboard(player)
+		end
+	end
+
+	if autoAimEnabled then
+		local target = getClosestPlayer()
+		if target and target.Character then
+			local aimPart = target.Character:FindFirstChild("Head") or target.Character:FindFirstChild("HumanoidRootPart")
+			if aimPart then
+				Camera.CFrame = CFrame.new(Camera.CFrame.Position, aimPart.Position)
+			end
+		end
+	end
+end)
